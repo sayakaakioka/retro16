@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/devcontainers/python:3.12
+
+RUN pip install --upgrade pip \
+	&& pip install pytest black isort
+
+USER vscode
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash"]

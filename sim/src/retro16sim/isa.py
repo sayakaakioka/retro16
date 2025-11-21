@@ -1,0 +1,12 @@
+from enum import IntEnum
+
+
+class Op(IntEnum):
+    ADD = 0x0
+    SUB = 0x1
+    ADDI = 0x2
+    LD = 0x3
+    ST = 0x4
+    JMP = 0x5
+    JZ = 0x6
+    HALT = 0xF
