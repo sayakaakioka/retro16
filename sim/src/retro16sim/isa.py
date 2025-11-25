@@ -9,4 +9,7 @@ class Op(IntEnum):
     ST = 0x4
     JMP = 0x5
     JZ = 0x6
+    CMP = 0x7
+    CMPI = 0x8
+    JNZ = 0x9
     HALT = 0xF

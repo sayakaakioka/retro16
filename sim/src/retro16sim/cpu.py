@@ -30,12 +30,15 @@ class CPU:
 
         self._handlers = {
             Op.ADD: self._exec_add,
-            # Op.SUB:     self._exec_sub,
+            Op.SUB: self._exec_sub,
             Op.ADDI: self._exec_addi,
             Op.LD: self._exec_ld,
             Op.ST: self._exec_st,
             Op.JMP: self._exec_jmp,
             Op.JZ: self._exec_jz,
+            Op.CMP: self._exec_cmp,
+            Op.CMPI: self._exec_cmpi,
+            Op.JNZ: self._exec_jnz,
         }
 
     @property
@@ -127,12 +130,27 @@ class CPU:
     def _update_flags_add(self, a, b, result) -> None:
         self.flag_z = True if result == 0 else False
         self.flag_n = bool(result & NEGATIVE_BIT)
+
+        # False if no carry, True otherwise
         self.flag_c = (a + b) > WORD_MASK
 
         sa = bool(a & NEGATIVE_BIT)
         sb = bool(b & NEGATIVE_BIT)
         sr = bool(result & NEGATIVE_BIT)
         self.flag_v = True if (sa == sb and sa != sr) else False
+
+    def _update_flags_sub(self, a, b, result) -> None:
+        # result = a - b
+        self.flag_z = True if result == 0 else False
+        self.flag_n = bool(result & NEGATIVE_BIT)
+
+        # True if no borrow, False otherwise
+        self.flag_c = a >= b
+
+        sa = bool(a & NEGATIVE_BIT)
+        sb = bool(b & NEGATIVE_BIT)
+        sr = bool(result & NEGATIVE_BIT)
+        self.flag_v = True if (sa != sb and sa != sr) else False
 
     def _exec_add(self, instr) -> None:
         rd, rs1, rs2 = self._decode_r(instr)
@@ -149,6 +167,28 @@ class CPU:
         result = (a + b) & WORD_MASK
         self.reg[rd] = result
         self._update_flags_add(a, b, result)
+
+    def _exec_sub(self, instr) -> None:
+        rd, rs1, rs2 = self._decode_r(instr)
+        a = self.reg[rs1]
+        b = self.reg[rs2]
+        result = (a - b) & WORD_MASK
+        self.reg[rd] = result
+        self._update_flags_sub(a, b, result)
+
+    def _exec_cmp(self, instr) -> None:
+        rd, rs1, rs2 = self._decode_r(instr)
+        a = self.reg[rs1]
+        b = self.reg[rs2]
+        result = (a - b) & WORD_MASK
+        self._update_flags_sub(a, b, result)
+
+    def _exec_cmpi(self, instr) -> None:
+        rd, rs, imm = self._decode_i(instr)
+        a = self.reg[rs]
+        b = imm & WORD_MASK
+        result = (a - b) & WORD_MASK
+        self._update_flags_sub(a, b, result)
 
     def _exec_ld(self, instr) -> None:
         rd, base, off = self._decode_m(instr)
@@ -172,4 +212,9 @@ class CPU:
     def _exec_jz(self, instr) -> None:
         off = self._decode_j(instr)
         if self.flag_z:
+            self.pc = (self.pc + off * 2) & WORD_MASK
+
+    def _exec_jnz(self, instr) -> None:
+        off = self._decode_j(instr)
+        if not self.flag_z:
             self.pc = (self.pc + off * 2) & WORD_MASK
