@@ -15,7 +15,7 @@ from retro16sim.machine import Machine
         (prog_countdown(), 100, 0),
     ],
 )
-def test_machine_with_rom(
+def test_r1_updates_as_expected(
     machine_with_test_rom: Machine, steps: int, expected_r1: int
 ) -> None:
     m = machine_with_test_rom

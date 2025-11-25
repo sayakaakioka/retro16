@@ -26,12 +26,12 @@ def asm_addi(rd: int, rs: int, imm: int) -> int:
     return _encode_i(Op.ADDI, rd, rs, imm)
 
 
-def asm_cmp(rd: int, rs1: int, rs2: int) -> int:
-    return _encode_r(Op.CMP, rd, rs1, rs2)
+def asm_cmp(rs1: int, rs2: int) -> int:
+    return _encode_r(Op.CMP, 0, rs1, rs2)
 
 
-def asm_cmpi(rd: int, rs: int, imm: int) -> int:
-    return _encode_i(Op.CMPI, rd, rs, imm)
+def asm_cmpi(rs: int, imm: int) -> int:
+    return _encode_i(Op.CMPI, 0, rs, imm)
 
 
 def asm_jmp(off_words: int) -> int:
@@ -50,7 +50,7 @@ def asm_halt():
     return _encode_j(Op.HALT, 0)
 
 
-def _encode_i(opcode: int, rd: int, rs: int, imm: int) -> int:
+def _encode_i(opcode: Op, rd: int, rs: int, imm: int) -> int:
     imm &= IMM6_MASK  # use 6 bits only (decoder takes care of sign)
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
@@ -60,7 +60,7 @@ def _encode_i(opcode: int, rd: int, rs: int, imm: int) -> int:
     )
 
 
-def _encode_r(opcode: int, rd: int, rs1: int, rs2: int) -> int:
+def _encode_r(opcode: Op, rd: int, rs1: int, rs2: int) -> int:
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
         | ((rd & REG_MASK) << REG_SHIFT_RD)
@@ -69,7 +69,7 @@ def _encode_r(opcode: int, rd: int, rs1: int, rs2: int) -> int:
     )
 
 
-def _encode_j(opcode: int, off_words: int) -> int:
+def _encode_j(opcode: Op, off_words: int) -> int:
     off = off_words & OFF12_MASK  # signed 12 bits
     return ((opcode & OPCODE_MASK) << OPCODE_SHIFT) | off
 

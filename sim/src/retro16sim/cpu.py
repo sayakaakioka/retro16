@@ -54,7 +54,7 @@ class CPU:
         self.pc = (self.pc + 2) & WORD_MASK
         return instr
 
-    def step(self, trace=False) -> None:
+    def step(self, trace=False) -> int:
         pc_before = self.pc
         instr = self.fetch()
         opcode_val = (instr >> OPCODE_SHIFT) & OPCODE_MASK
@@ -73,9 +73,9 @@ class CPU:
                 int(self.flag_v),
             )
 
-        if opcode is Op.HALT:
+        if opcode == Op.HALT:
             self.halted = True
-            return
+            return 0
 
         try:
             handler = self._handlers[opcode]
@@ -83,8 +83,14 @@ class CPU:
             raise RuntimeError(f"Unknown opcode: {opcode_val}")
 
         handler(instr)
+        return 1
 
-    def _decode_r(self, instr) -> tuple[int, int, int]:
+    Reg = int
+    Imm = int
+    Base = int
+    Offset = int
+
+    def _decode_r(self, instr) -> tuple[Reg, Reg, Reg]:
         # [2:0] unused
         # [5:3] rs2
         rs2 = (instr >> REG_SHIFT_RS2) & REG_MASK
@@ -95,7 +101,7 @@ class CPU:
         # [15:12] opcode
         return rd, rs1, rs2
 
-    def _decode_i(self, instr) -> tuple[int, int, int]:
+    def _decode_i(self, instr) -> tuple[Reg, Reg, Imm]:
         # [5:0] imm6 (signed)
         imm = instr & IMM6_MASK
         if imm & IMM6_SIGNBIT:
@@ -107,7 +113,7 @@ class CPU:
         # [15:12] opcode
         return rd, rs, imm
 
-    def _decode_m(self, instr) -> tuple[int, int, int]:
+    def _decode_m(self, instr) -> tuple[Reg, Base, Offset]:
         # [5:0] off6 (signed)
         off = instr & IMM6_MASK
         if off & IMM6_SIGNBIT:
@@ -119,7 +125,7 @@ class CPU:
         # [15:12] opcode
         return r, base, off
 
-    def _decode_j(self, instr) -> int:
+    def _decode_j(self, instr) -> Offset:
         # [11:0] offset12 (relative to PC / signed)
         off = instr & OFF12_MASK
         if off & OFF12_SIGNBIT:

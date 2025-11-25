@@ -15,11 +15,11 @@ class Bus:
         return self.mem[addr]
 
     def store8(self, addr: int, val: int) -> None:
+        addr &= ADDR_MASK
         if ROM_START <= addr <= ROM_END:
             # ROM area
             return
 
-        addr &= ADDR_MASK
         val &= BYTE_MASK
         self.mem[addr] = val
 

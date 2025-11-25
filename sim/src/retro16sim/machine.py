@@ -26,34 +26,15 @@ class Machine:
         for _ in range(10000):
             if self.cpu.halted:
                 break
-            self.cpu.step()
-            self.cycles += 1
+            self.cycles += self.cpu.step()
             # TODO: handle PPU/APU
 
     def run_step(self, trace=False) -> None:
         if not self.cpu.halted:
-            self.cpu.step(trace=trace)
-            self.cycles += 1
+            self.cycles += self.cpu.step(trace=trace)
 
     def run_n_steps(self, n: int, trace=False) -> None:
         for _ in range(n):
             if self.cpu.halted:
                 break
             self.run_step(trace=trace)
-
-
-def run_test_program(steps: int = 10, trace: bool = False) -> "Machine":
-    m = Machine()
-    m.reset()
-    rom = build_test_rom()
-    m.load_rom(rom, 0x0000)
-
-    # test steps
-    m.run_n_steps(steps, trace=True)
-
-    return m
-
-
-if __name__ == "__main__":
-    m = run_test_program(10, trace=True)
-    print("Final R1 = ", hex(m.cpu.reg[1]))
