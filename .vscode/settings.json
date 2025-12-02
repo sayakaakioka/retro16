@@ -14,7 +14,4 @@
             "source.organizeImports": "explicit"
         }
     },
-    
-    "python.sortImports.path": "isort",
-    "python.sortImports.args": ["--profile", "black"]
 }

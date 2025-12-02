@@ -1,6 +1,6 @@
 import pytest
 
-from retro16sim.machine import Machine, build_test_rom
+from retro16sim import Machine, build_test_rom
 
 
 @pytest.fixture

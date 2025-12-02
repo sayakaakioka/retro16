@@ -4,7 +4,7 @@ from .test_helpers import (
     prog_add_two_then_halt,
     prog_countdown,
 )
-from retro16sim.machine import Machine
+from retro16sim import Machine
 
 
 @pytest.mark.parametrize(
