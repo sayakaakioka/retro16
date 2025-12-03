@@ -1,9 +1,11 @@
+from abc import ABC
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Literal
 
 from .assembler import (
     asm_add,
     asm_addi,
+    asm_cmp,
     asm_cmpi,
     asm_halt,
     asm_jmp,
@@ -17,7 +19,7 @@ from .const import R0, R1
 
 
 @dataclass
-class Expr:
+class Expr(ABC):
     pass
 
 
@@ -39,18 +41,25 @@ class BinOp(Expr):
 
 
 @dataclass
-class Cond:
+class Cond(Expr):
     pass
 
 
 @dataclass
 class CmpZero(Cond):
-    var: str  # name of variable
-    op: str  # "==" or "!="
+    expr: Expr
+    op: Literal["==", "!="]  # "==" or "!="
 
 
 @dataclass
-class Stmt:
+class Cmp(Cond):
+    left: Expr
+    op: Literal["==", "!="]
+    right: Expr
+
+
+@dataclass
+class Stmt(ABC):
     pass
 
 
@@ -67,11 +76,18 @@ class While(Stmt):
 
 
 @dataclass
+class If(Stmt):
+    cond: Cond
+    then_body: List[Stmt]
+    else_body: List[Stmt] | None = None
+
+
+@dataclass
 class Program:
     stmts: List[Stmt]
 
 
-# compiler
+type JumpKind = Literal["jmp", "jz", "jnz"]
 
 
 class Compiler:
@@ -83,14 +99,16 @@ class Compiler:
         self.labels: Dict[str, int] = {}
 
         # jump instructions
-        # kind: "jmp" | "jz" | "jnz"
-        self.patches: List[Tuple[str, int, str]] = []
+        self.patches: List[Tuple[JumpKind, int, str]] = []
 
         # variable -> register number
         self.var_regs: Dict[str, int] = {}
 
-        # label suffix
+        # suffix for labels
         self._label_counter = 0
+
+        # suffix for temporary valuables
+        self._temp_counter = 0
 
     # utilities
     def alloc_reg_for_var(self, name: str) -> int:
@@ -104,6 +122,20 @@ class Compiler:
 
     def reg_of(self, name: str) -> int:
         return self.alloc_reg_for_var(name)
+
+    def _alloc_temp_reg(self) -> int:
+        tmp_name = f"__tmp{self._temp_counter}"
+        self._temp_counter += 1
+        return self.alloc_reg_for_var(tmp_name)
+
+    def _eval_expr_to_reg(self, expr: Expr) -> int:
+        if isinstance(expr, Var):
+            return self.reg_of(expr.name)
+
+        # other than variables, use the temporary registers
+        reg = self._alloc_temp_reg()
+        self.compile_expr(expr, target_reg=reg)
+        return reg
 
     def current_index(self) -> int:
         return len(self.rom_words)
@@ -160,33 +192,78 @@ class Compiler:
                     "BinOp accepts only Var +/- Const style for now"
                 )
 
+        elif isinstance(expr, Cond):
+            # evaluate condition as 0 or not 0 sentence
+            # but place holder for now
+            raise NotImplementedError("Cond cannot be used as value Expr yet")
+
         else:
             raise NotImplementedError(f"unknown expr: {expr!r}")
 
-    def compile_cond(self, cond: Cond) -> str:
+    def compile_cond(self, cond: Cond, false_label: str) -> None:
+        # evaluate conditions and insert jump to false_label when cond is false
         if isinstance(cond, CmpZero):
-            var_reg = self.reg_of(cond.var)
-            self.emit(asm_cmpi(rs=var_reg, imm=0))
+            expr = cond.expr
+            if isinstance(expr, Var):
+                reg = self._eval_expr_to_reg(expr)
+                self.emit(asm_cmpi(rs=reg, imm=0))
 
-            false_label = self._new_label("while_false")
+            elif isinstance(expr, Const):
+                reg = self._eval_expr_to_reg(expr)
+                self.emit(asm_cmpi(rs=reg, imm=0))
+
+            else:
+                raise NotImplementedError(
+                    "CmpZero currently supports Var or Const only"
+                )
+
             if cond.op == "!=":
-                # while (x != 0):
-                # which means
-                #   CMPI x, 0
-                #   JZ while_false
+                # condition: expr != 0
+                # jump to false_label if expr == 0
                 self.emit_jz_label(false_label)
 
             elif cond.op == "==":
-                # while (x == 0):
-                # which means
-                #   CMPI x, 0
-                #   JNZ while_false
+                # condition: expr == 0
+                # jump to false_label if expr != 0
                 self.emit_jnz_label(false_label)
 
             else:
                 raise NotImplementedError(f"unknown op {cond.op}")
 
-            return false_label
+        elif isinstance(cond, Cmp):
+            left = cond.left
+            right = cond.right
+
+            if isinstance(left, Var) and isinstance(right, Var):
+                r1 = self.reg_of(left.name)
+                r2 = self.reg_of(right.name)
+                self.emit(asm_cmp(rs1=r1, rs2=r2))
+
+            elif isinstance(left, Var) and isinstance(right, Const):
+                r1 = self.reg_of(left.name)
+                self.emit(asm_cmpi(rs=r1, imm=right.value))
+
+            elif isinstance(left, Const) and isinstance(right, Var):
+                raise NotImplementedError("Cmp(Const, Var) is not supported yet")
+
+            else:
+                raise NotImplementedError(
+                    "Cmp supports only (Var vs Var) or (Var vs Const) for not "
+                )
+
+            # JUMP POLICY: JUMP IF FALSE
+            if cond.op == "==":
+                # Z==1 if the result is equal
+                # -> false condition: not equals to zero
+                self.emit_jnz_label(false_label)
+
+            elif cond.op == "!=":
+                # Z==0 if the result is not equal
+                # -> false condition: equals to zero
+                self.emit_jz_label(false_label)
+
+            else:
+                raise NotImplementedError(f"unknown op {cond.op}")
 
         else:
             raise NotImplementedError(f"unknown cond: {cond!r}")
@@ -198,14 +275,37 @@ class Compiler:
 
         elif isinstance(stmt, While):
             loop_label = self._new_label("loop")
-            end_label: str
+            end_label = self._new_label("while_end")
+
             self.mark_label(loop_label)
-            end_label = self.compile_cond(stmt.cond)
+            self.compile_cond(stmt.cond, false_label=end_label)
 
             for s in stmt.body:
                 self.compile_stmt(s)
+
             self.emit_jmp_label(loop_label)
             self.mark_label(end_label)
+
+        elif isinstance(stmt, If):
+            else_label = self._new_label("if_else")
+            end_label = self._new_label("if_end")
+
+            self.compile_cond(stmt.cond, false_label=else_label)
+
+            for s in stmt.then_body:
+                self.compile_stmt(s)
+
+            if stmt.else_body:
+                self.emit_jmp_label(end_label)
+                self.mark_label(else_label)
+
+                for s in stmt.else_body:
+                    self.compile_stmt(s)
+
+                self.mark_label(end_label)
+
+            else:
+                self.mark_label(else_label)
 
         else:
             raise NotImplementedError(f"unknown stmt: {stmt!r}")

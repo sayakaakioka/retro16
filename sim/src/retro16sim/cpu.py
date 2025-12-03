@@ -85,10 +85,10 @@ class CPU:
         handler(instr)
         return 1
 
-    Reg = int
-    Imm = int
-    Base = int
-    Offset = int
+    type Reg = int
+    type Imm = int
+    type Base = int
+    type Offset = int
 
     def _decode_r(self, instr) -> tuple[Reg, Reg, Reg]:
         # [2:0] unused
