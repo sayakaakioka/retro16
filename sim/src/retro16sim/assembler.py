@@ -13,44 +13,47 @@ from .const import (
 
 from .isa import Op
 
-
-def asm_add(rd: int, rs1: int, rs2: int) -> int:
-    return _encode_r(Op.ADD, rd, rs1, rs2)
-
-
-def asm_sub(rd: int, rs1: int, rs2: int) -> int:
-    return _encode_r(Op.SUB, rd, rs1, rs2)
+type Reg = int
+type Imm = int
 
 
-def asm_addi(rd: int, rs: int, imm: int) -> int:
-    return _encode_i(Op.ADDI, rd, rs, imm)
+def asm_add(rd: Reg, rs1: Reg, rs2: Reg) -> int:
+    return _encode_r(opcode=Op.ADD, rd=rd, rs1=rs1, rs2=rs2)
 
 
-def asm_cmp(rs1: int, rs2: int) -> int:
-    return _encode_r(Op.CMP, 0, rs1, rs2)
+def asm_sub(rd: Reg, rs1: Reg, rs2: Reg) -> int:
+    return _encode_r(opcode=Op.SUB, rd=rd, rs1=rs1, rs2=rs2)
 
 
-def asm_cmpi(rs: int, imm: int) -> int:
-    return _encode_i(Op.CMPI, 0, rs, imm)
+def asm_addi(rd: Reg, rs: Reg, imm: Imm) -> int:
+    return _encode_i(opcode=Op.ADDI, rd=rd, rs=rs, imm=imm)
+
+
+def asm_cmp(rs1: Reg, rs2: Reg) -> int:
+    return _encode_r(opcode=Op.CMP, rd=0, rs1=rs1, rs2=rs2)
+
+
+def asm_cmpi(rs: Reg, imm: Imm) -> int:
+    return _encode_i(opcode=Op.CMPI, rd=0, rs=rs, imm=imm)
 
 
 def asm_jmp(off_words: int) -> int:
-    return _encode_j(Op.JMP, off_words)
+    return _encode_j(opcode=Op.JMP, off_words=off_words)
 
 
 def asm_jz(off_words: int) -> int:
-    return _encode_j(Op.JZ, off_words)
+    return _encode_j(opcode=Op.JZ, off_words=off_words)
 
 
 def asm_jnz(off_words: int) -> int:
-    return _encode_j(Op.JNZ, off_words)
+    return _encode_j(opcode=Op.JNZ, off_words=off_words)
 
 
 def asm_halt():
-    return _encode_j(Op.HALT, 0)
+    return _encode_j(opcode=Op.HALT, off_words=0)
 
 
-def _encode_i(opcode: Op, rd: int, rs: int, imm: int) -> int:
+def _encode_i(*, opcode: Op, rd: Reg, rs: Reg, imm: Imm) -> int:
     imm &= IMM6_MASK  # use 6 bits only (decoder takes care of sign)
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
@@ -60,7 +63,7 @@ def _encode_i(opcode: Op, rd: int, rs: int, imm: int) -> int:
     )
 
 
-def _encode_r(opcode: Op, rd: int, rs1: int, rs2: int) -> int:
+def _encode_r(*, opcode: Op, rd: Reg, rs1: Reg, rs2: Reg) -> int:
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
         | ((rd & REG_MASK) << REG_SHIFT_RD)
@@ -69,7 +72,7 @@ def _encode_r(opcode: Op, rd: int, rs1: int, rs2: int) -> int:
     )
 
 
-def _encode_j(opcode: Op, off_words: int) -> int:
+def _encode_j(*, opcode: Op, off_words: int) -> int:
     off = off_words & OFF12_MASK  # signed 12 bits
     return ((opcode & OPCODE_MASK) << OPCODE_SHIFT) | off
 

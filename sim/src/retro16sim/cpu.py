@@ -19,7 +19,7 @@ from .isa import Op
 
 class CPU:
     def __init__(self, bus):
-        self.reg = [0] * 8  # R0..R7
+        self.reg = [0] * 8  # R0..R7, R0 is utilied as 0
         self.pc = 0  # program counter by byte
         self.flag_z = False  # zero
         self.flag_n = False  # negative (MSB=1)

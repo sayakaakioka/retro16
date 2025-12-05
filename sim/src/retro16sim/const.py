@@ -1,3 +1,6 @@
+type WORD = int
+type Addr = int
+
 WORD_BITS = 16
 WORD_MASK = 0xFFFF
 ADDR_MASK = 0xFFFF

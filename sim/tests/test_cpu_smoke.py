@@ -1,6 +1,3 @@
-# import pytest
-
-
 def test_machine_initial_state(machine):
     assert len(machine.cpu.reg) > 0
 

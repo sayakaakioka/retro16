@@ -107,7 +107,7 @@ class Compiler:
         # suffix for labels
         self._label_counter = 0
 
-        # suffix for temporary valuables
+        # suffix for temporary variables
         self._temp_counter = 0
 
     # utilities
@@ -132,10 +132,10 @@ class Compiler:
         if isinstance(expr, Var):
             return self.reg_of(expr.name)
 
-        # other than variables, use the temporary registers
-        reg = self._alloc_temp_reg()
-        self.compile_expr(expr, target_reg=reg)
-        return reg
+        else:
+            reg = self._alloc_temp_reg()
+            self.compile_expr(expr=expr, target_reg=reg)
+            return reg
 
     def current_index(self) -> int:
         return len(self.rom_words)
@@ -192,81 +192,58 @@ class Compiler:
                     "BinOp accepts only Var +/- Const style for now"
                 )
 
-        elif isinstance(expr, Cond):
-            # evaluate condition as 0 or not 0 sentence
-            # but place holder for now
-            raise NotImplementedError("Cond cannot be used as value Expr yet")
+        elif isinstance(expr, CmpZero):
+            tmp = self._eval_expr_to_reg(expr.expr)
+
+            # compare tmp and 0
+            self.emit(asm_cmpi(rs=tmp, imm=0))
+
+            # generates code like this:
+            # if eq: jmp true
+            # reg = 0
+            # jmp end
+            # true: reg = 1
+            # end:
+
+            true_label = self._new_label("cond_true")
+            end_label = self._new_label("cond_end")
+
+            if expr.op == "==":
+                self.emit_jz_label(true_label)
+            else:
+                self.emit_jnz_label(true_label)
+
+            self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
+            self.emit_jmp_label(end_label)
+
+            self.mark_label(true_label)
+            self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+
+            self.mark_label(end_label)
+
+        elif isinstance(expr, Cmp):
+            left_reg = self._eval_expr_to_reg(expr.left)
+            right_reg = self._eval_expr_to_reg(expr.right)
+            self.emit(asm_cmp(rs1=left_reg, rs2=right_reg))
+
+            true_label = self._new_label("cond_true")
+            end_label = self._new_label("cond_end")
+
+            if expr.op == "==":
+                self.emit_jz_label(true_label)
+            else:
+                self.emit_jnz_label(true_label)
+
+            self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
+            self.emit_jmp_label(end_label)
+
+            self.mark_label(true_label)
+            self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+
+            self.mark_label(end_label)
 
         else:
             raise NotImplementedError(f"unknown expr: {expr!r}")
-
-    def compile_cond(self, cond: Cond, false_label: str) -> None:
-        # evaluate conditions and insert jump to false_label when cond is false
-        if isinstance(cond, CmpZero):
-            expr = cond.expr
-            if isinstance(expr, Var):
-                reg = self._eval_expr_to_reg(expr)
-                self.emit(asm_cmpi(rs=reg, imm=0))
-
-            elif isinstance(expr, Const):
-                reg = self._eval_expr_to_reg(expr)
-                self.emit(asm_cmpi(rs=reg, imm=0))
-
-            else:
-                raise NotImplementedError(
-                    "CmpZero currently supports Var or Const only"
-                )
-
-            if cond.op == "!=":
-                # condition: expr != 0
-                # jump to false_label if expr == 0
-                self.emit_jz_label(false_label)
-
-            elif cond.op == "==":
-                # condition: expr == 0
-                # jump to false_label if expr != 0
-                self.emit_jnz_label(false_label)
-
-            else:
-                raise NotImplementedError(f"unknown op {cond.op}")
-
-        elif isinstance(cond, Cmp):
-            left = cond.left
-            right = cond.right
-
-            if isinstance(left, Var) and isinstance(right, Var):
-                r1 = self.reg_of(left.name)
-                r2 = self.reg_of(right.name)
-                self.emit(asm_cmp(rs1=r1, rs2=r2))
-
-            elif isinstance(left, Var) and isinstance(right, Const):
-                r1 = self.reg_of(left.name)
-                self.emit(asm_cmpi(rs=r1, imm=right.value))
-
-            elif isinstance(left, Const) and isinstance(right, Var):
-                raise NotImplementedError("Cmp(Const, Var) is not supported yet")
-
-            else:
-                raise NotImplementedError(
-                    "Cmp supports only (Var vs Var) or (Var vs Const) for not "
-                )
-
-            # JUMP POLICY: JUMP IF FALSE
-            if cond.op == "==":
-                # Z==1 if the result is equal
-                # -> false condition: not equals to zero
-                self.emit_jnz_label(false_label)
-
-            elif cond.op == "!=":
-                # Z==0 if the result is not equal
-                # -> false condition: equals to zero
-                self.emit_jz_label(false_label)
-
-            else:
-                raise NotImplementedError(f"unknown op {cond.op}")
-
-        else:
-            raise NotImplementedError(f"unknown cond: {cond!r}")
 
     def compile_stmt(self, stmt: Stmt) -> None:
         if isinstance(stmt, Assign):
@@ -278,7 +255,10 @@ class Compiler:
             end_label = self._new_label("while_end")
 
             self.mark_label(loop_label)
-            self.compile_cond(stmt.cond, false_label=end_label)
+
+            cond_reg = self._eval_expr_to_reg(stmt.cond)
+            self.emit(asm_cmpi(rs=cond_reg, imm=0))
+            self.emit_jz_label(end_label)
 
             for s in stmt.body:
                 self.compile_stmt(s)
@@ -290,7 +270,9 @@ class Compiler:
             else_label = self._new_label("if_else")
             end_label = self._new_label("if_end")
 
-            self.compile_cond(stmt.cond, false_label=else_label)
+            cond_reg = self._eval_expr_to_reg(stmt.cond)
+            self.emit(asm_cmpi(rs=cond_reg, imm=0))
+            self.emit_jz_label(else_label)
 
             for s in stmt.then_body:
                 self.compile_stmt(s)
