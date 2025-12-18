@@ -83,7 +83,7 @@ def compile_src() -> CompileSrc:
 
 
 @pytest.fixture
-def run_src(run_words: RunWords, compile_rc: CompileSrc) -> RunSrc:
+def run_src(run_words: RunWords, compile_src: CompileSrc) -> RunSrc:
     def _run(
         src: str,
         *,
