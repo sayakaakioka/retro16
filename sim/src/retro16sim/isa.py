@@ -14,4 +14,6 @@ class Op(IntEnum):
     JNZ = 0x9
     JLT = 0xA
     JGE = 0xB
+    MUL = 0xC
+    DIV = 0xD
     HALT = 0xF

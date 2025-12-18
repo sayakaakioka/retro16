@@ -1,7 +1,11 @@
+import pytest
+
 from retro16sim.assembler import (
     asm_add,
     asm_addi,
     asm_sub,
+    asm_mul,
+    asm_div,
     asm_cmp,
     asm_cmpi,
     asm_halt,
@@ -71,6 +75,41 @@ def test_addi_negative_sets_n(run_words) -> None:
 
     assert r.machine.cpu.reg[1] == 0xFFFF
     assert r.machine.cpu.flag_n is True
+
+
+def test_mul_basic(run_words) -> None:
+    rom = [
+        asm_addi(rd=1, rs=0, imm=6),
+        asm_addi(rd=2, rs=0, imm=7),
+        asm_mul(rd=3, rs1=1, rs2=2),
+        asm_halt(),
+    ]
+    r = run_words(rom, steps=20)
+
+    assert r.machine.cpu.reg[3] == 42
+
+
+def test_div_basic(run_words) -> None:
+    rom = [
+        asm_addi(rd=1, rs=0, imm=7),
+        asm_addi(rd=2, rs=0, imm=3),
+        asm_div(rd=3, rs1=1, rs2=2),
+        asm_halt(),
+    ]
+    r = run_words(rom, steps=20)
+
+    assert r.machine.cpu.reg[3] == 2
+
+
+def test_div_by_zero_raises(run_words) -> None:
+    rom = [
+        asm_addi(rd=1, rs=0, imm=7),
+        asm_addi(rd=2, rs=0, imm=0),
+        asm_div(rd=3, rs1=1, rs2=2),
+        asm_halt(),
+    ]
+    with pytest.raises(ZeroDivisionError):
+        run_words(rom, steps=20)
 
 
 def test_cmpi_equal_sets_z(run_words) -> None:

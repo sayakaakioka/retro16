@@ -1,0 +1,19 @@
+from retro16sim.parser import parse_program
+from retro16sim.lang import Assign, BinOp, Const, Var, Program
+
+
+def test_expr_precedence_mul_over_add() -> None:
+    src = "x = 1 + 2 * 3;"
+    prog = parse_program(src)
+    assert isinstance(prog, Program)
+
+    stmt0 = prog.stmts[0]
+    assert isinstance(stmt0, Assign)
+    assert stmt0.name == "x"
+
+    # expected: 1 + (2 * 3)
+    e = stmt0.expr
+    assert isinstance(e, BinOp)
+    assert e.op == "+"
+    assert isinstance(e.left, Const) and e.left.value == 1
+    assert isinstance(e.right, BinOp) and e.right.op == "*"

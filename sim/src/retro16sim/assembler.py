@@ -25,6 +25,14 @@ def asm_sub(rd: Reg, rs1: Reg, rs2: Reg) -> int:
     return _encode_r(opcode=Op.SUB, rd=rd, rs1=rs1, rs2=rs2)
 
 
+def asm_mul(rd: int, rs1: int, rs2: int) -> int:
+    return _encode_r(Op.MUL, rd, rs1, rs2)
+
+
+def asm_div(rd: int, rs1: int, rs2: int) -> int:
+    return _encode_r(Op.DIV, rd, rs1, rs2)
+
+
 def asm_addi(rd: Reg, rs: Reg, imm: Imm) -> int:
     return _encode_i(opcode=Op.ADDI, rd=rd, rs=rs, imm=imm)
 

@@ -5,12 +5,15 @@ from typing import List, Dict, Tuple, Literal
 from .assembler import (
     asm_add,
     asm_addi,
+    asm_sub,
     asm_cmp,
     asm_cmpi,
     asm_halt,
     asm_jmp,
     asm_jz,
     asm_jnz,
+    asm_mul,
+    asm_div,
 )
 
 from .const import R0, R1
@@ -177,20 +180,19 @@ class Compiler:
             self.emit(asm_add(rd=target_reg, rs1=src_reg, rs2=R0))
 
         elif isinstance(expr, BinOp):
-            # assume "Var +/- Const" for now
-            if isinstance(expr.left, Var) and isinstance(expr.right, Const):
-                var_reg = self.reg_of(expr.left.name)
-                imm = expr.right.value
-                if expr.op == "+":
-                    self.emit(asm_addi(rd=target_reg, rs=var_reg, imm=imm))
-                elif expr.op == "-":
-                    self.emit(asm_addi(rd=target_reg, rs=var_reg, imm=-imm))
-                else:
-                    raise NotImplementedError(f"unknown op {expr.op}")
+            r1 = self._eval_expr_to_reg(expr.left)
+            r2 = self._eval_expr_to_reg(expr.right)
+
+            if expr.op == "+":
+                self.emit(asm_add(rd=target_reg, rs1=r1, rs2=r2))
+            elif expr.op == "-":
+                self.emit(asm_sub(rd=target_reg, rs1=r1, rs2=r2))
+            elif expr.op == "*":
+                self.emit(asm_mul(rd=target_reg, rs1=r1, rs2=r2))
+            elif expr.op == "/":
+                self.emit(asm_div(rd=target_reg, rs1=r1, rs2=r2))
             else:
-                raise NotImplementedError(
-                    "BinOp accepts only Var +/- Const style for now"
-                )
+                raise NotImplementedError(f"unknown op {expr.op}")
 
         elif isinstance(expr, CmpZero):
             tmp = self._eval_expr_to_reg(expr.expr)

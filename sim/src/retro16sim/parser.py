@@ -60,13 +60,13 @@ TOKEN_SPEC = [
     ("EQ", r"="),  # define EQEQ, NEQ, EQ in this order for the correct parse
     ("PLUS", r"\+"),
     ("MINUS", r"-"),
+    ("STAR", r"\*"),
+    ("SLASH", r"/"),
     ("LPAREN", r"\("),
     ("RPAREN", r"\)"),
     ("LBRACE", r"\{"),
     ("RBRACE", r"\}"),
     ("SEMICOLON", r";"),
-    ("STAR", r"\*"),
-    ("SLASH", r"/"),
 ]
 
 MASTER_RE = re.compile(
@@ -190,18 +190,46 @@ class Parser:
             raise SyntaxError(f"unexpected == or != in condition at {tok.pos}")
 
     def parse_expr(self) -> Expr:
-        expr = self.parse_primary()
+        # expr := term (('+'|'-') term)*
+        expr = self.parse_term()
         while self.cur().kind in ("PLUS", "MINUS"):
-            op_tok = self.cur()
-            if op_tok.kind == "PLUS":
+            tok = self.cur()
+            if tok.kind == "PLUS":
                 self.eat("PLUS")
-                right = self.parse_primary()
+                right = self.parse_term()
                 expr = BinOp(op="+", left=expr, right=right)
             else:
                 self.eat("MINUS")
-                right = self.parse_primary()
+                right = self.parse_term()
                 expr = BinOp(op="-", left=expr, right=right)
         return expr
+
+    def parse_term(self) -> Expr:
+        # term := unary (('*'|'/') unary)*
+        expr = self.parse_unary()
+        while self.cur().kind in ("STAR", "SLASH"):
+            tok = self.cur()
+            if tok.kind == "STAR":
+                self.eat("STAR")
+                right = self.parse_unary()
+                expr = BinOp(op="*", left=expr, right=right)
+            else:
+                self.eat("SLASH")
+                right = self.parse_unary()
+                expr = BinOp(op="/", left=expr, right=right)
+        return expr
+
+    def parse_unary(self) -> Expr:
+        # unary := ('+'|'-') unary | primary
+        tok = self.cur()
+        if tok.kind == "PLUS":
+            self.eat("PLUS")
+            return self.parse_unary()
+        if tok.kind == "MINUS":
+            self.eat("MINUS")
+            # -E -> 0 - E
+            return BinOp(op="-", left=Const(0), right=self.parse_unary())
+        return self.parse_primary()
 
     def parse_primary(self) -> Expr:
         tok = self.cur()

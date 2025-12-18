@@ -42,6 +42,8 @@ class CPU:
             Op.JNZ: self._exec_jnz,
             Op.JLT: self._exec_jlt,
             Op.JGE: self._exec_jge,
+            Op.MUL: self._exec_mul,
+            Op.DIV: self._exec_div,
         }
 
     @property
@@ -137,6 +139,10 @@ class CPU:
         return off
 
     def _update_flags_add(self, a, b, result) -> None:
+        a &= WORD_MASK
+        b &= WORD_MASK
+        result &= WORD_MASK
+
         self.flag_z = True if result == 0 else False
         self.flag_n = bool(result & NEGATIVE_BIT)
 
@@ -148,9 +154,11 @@ class CPU:
         sr = bool(result & NEGATIVE_BIT)
         self.flag_v = True if (sa == sb and sa != sr) else False
 
-        self.flag_lt = self.flag_n != self.flag_v  # signed a < b
-
     def _update_flags_sub(self, a, b, result) -> None:
+        a &= WORD_MASK
+        b &= WORD_MASK
+        result &= WORD_MASK
+
         # result = a - b
         self.flag_z = True if result == 0 else False
         self.flag_n = bool(result & NEGATIVE_BIT)
@@ -163,17 +171,27 @@ class CPU:
         sr = bool(result & NEGATIVE_BIT)
         self.flag_v = True if (sa != sb and sa != sr) else False
 
+        self.flag_lt = True if (self.flag_n != self.flag_v) else False  # signed a < b
+
+    def _update_flags_logic(self, result: int) -> None:
+        result &= WORD_MASK
+        self.flag_z = True if result == 0 else False
+        self.flag_n = bool(result & NEGATIVE_BIT)
+        self.flag_c = False
+        self.flag_v = False
+        self.flag_lt = True if (self.flag_n != self.flag_v) else False
+
     def _exec_add(self, instr) -> None:
         rd, rs1, rs2 = self._decode_r(instr)
-        a = self.reg[rs1]
-        b = self.reg[rs2]
+        a = self.reg[rs1] & WORD_MASK
+        b = self.reg[rs2] & WORD_MASK
         result = (a + b) & WORD_MASK
         self.reg[rd] = result
         self._update_flags_add(a, b, result)
 
     def _exec_addi(self, instr) -> None:
         rd, rs, imm = self._decode_i(instr)
-        a = self.reg[rs]
+        a = self.reg[rs] & WORD_MASK
         b = imm & WORD_MASK
         result = (a + b) & WORD_MASK
         self.reg[rd] = result
@@ -181,25 +199,51 @@ class CPU:
 
     def _exec_sub(self, instr) -> None:
         rd, rs1, rs2 = self._decode_r(instr)
-        a = self.reg[rs1]
-        b = self.reg[rs2]
+        a = self.reg[rs1] & WORD_MASK
+        b = self.reg[rs2] & WORD_MASK
         result = (a - b) & WORD_MASK
         self.reg[rd] = result
         self._update_flags_sub(a, b, result)
 
+    def _exec_mul(self, instr) -> None:
+        rd, rs1, rs2 = self._decode_r(instr)
+        a = self.reg[rs1] & WORD_MASK
+        b = self.reg[rs2] & WORD_MASK
+        result = (a * b) & WORD_MASK
+        self.reg[rd] = result
+        self._update_flags_logic(result)
+
+    def _exec_div(self, instr) -> None:
+        rd, rs1, rs2 = self._decode_r(instr)
+        a = self.reg[rs1] & WORD_MASK
+        b = self.reg[rs2] & WORD_MASK
+
+        if b == 0:
+            raise ZeroDivisionError("DIV by zero")
+
+        result = (a // b) & WORD_MASK  # unsigned only
+        self.reg[rd] = result
+        self._update_flags_logic(result)
+
     def _exec_cmp(self, instr) -> None:
         rd, rs1, rs2 = self._decode_r(instr)
-        a = self.reg[rs1]
-        b = self.reg[rs2]
+        a = self.reg[rs1] & WORD_MASK
+        b = self.reg[rs2] & WORD_MASK
         result = (a - b) & WORD_MASK
         self._update_flags_sub(a, b, result)
 
     def _exec_cmpi(self, instr) -> None:
         rd, rs, imm = self._decode_i(instr)
-        a = self.reg[rs]
+        a = self.reg[rs] & WORD_MASK
         b = imm & WORD_MASK
         result = (a - b) & WORD_MASK
+        print(
+            f"CMPI: a={a:04X} b={b:04X} result={result:04X} N={int(bool(result & 0x8000))}"
+        )
         self._update_flags_sub(a, b, result)
+        print(
+            f"      Z={int(self.flag_z)} N={int(self.flag_n)} V={int(self.flag_v)} C={int(self.flag_c)}"
+        )
 
     def _exec_ld(self, instr) -> None:
         rd, base, off = self._decode_m(instr)
@@ -237,5 +281,5 @@ class CPU:
 
     def _exec_jge(self, instr) -> None:
         off = self._decode_j(instr)
-        if not self.flat_lt:
+        if not self.flag_lt:
             self.pc = (self.pc + off * 2) & WORD_MASK
