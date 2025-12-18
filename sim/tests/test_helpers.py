@@ -1,4 +1,11 @@
-from retro16sim.assembler import asm_addi, asm_cmpi, asm_jmp, asm_jz, asm_jnz, asm_halt
+from retro16sim.assembler import (
+    asm_addi,
+    asm_cmpi,
+    asm_jmp,
+    asm_jz,
+    asm_jnz,
+    asm_halt,
+)
 
 
 def prog_infinite_loop_r1_add():

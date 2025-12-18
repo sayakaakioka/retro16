@@ -1,5 +1,3 @@
-# import pytest
-
 from retro16sim.lang import (
     Program,
     Assign,

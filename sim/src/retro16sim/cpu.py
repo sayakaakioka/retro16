@@ -25,6 +25,7 @@ class CPU:
         self.flag_n = False  # negative (MSB=1)
         self.flag_c = False  # carry/borrow
         self.flag_v = False  # overflow (signed)
+        self.flag_lt = False  # signed less than (N xor V)
         self.bus = bus  # for memory access
         self.halted = False
 
@@ -39,6 +40,8 @@ class CPU:
             Op.CMP: self._exec_cmp,
             Op.CMPI: self._exec_cmpi,
             Op.JNZ: self._exec_jnz,
+            Op.JLT: self._exec_jlt,
+            Op.JGE: self._exec_jge,
         }
 
     @property
@@ -145,6 +148,8 @@ class CPU:
         sr = bool(result & NEGATIVE_BIT)
         self.flag_v = True if (sa == sb and sa != sr) else False
 
+        self.flag_lt = self.flag_n != self.flag_v  # signed a < b
+
     def _update_flags_sub(self, a, b, result) -> None:
         # result = a - b
         self.flag_z = True if result == 0 else False
@@ -223,4 +228,14 @@ class CPU:
     def _exec_jnz(self, instr) -> None:
         off = self._decode_j(instr)
         if not self.flag_z:
+            self.pc = (self.pc + off * 2) & WORD_MASK
+
+    def _exec_jlt(self, instr) -> None:
+        off = self._decode_j(instr)
+        if self.flag_lt:
+            self.pc = (self.pc + off * 2) & WORD_MASK
+
+    def _exec_jge(self, instr) -> None:
+        off = self._decode_j(instr)
+        if not self.flat_lt:
             self.pc = (self.pc + off * 2) & WORD_MASK

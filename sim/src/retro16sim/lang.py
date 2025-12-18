@@ -54,7 +54,7 @@ class CmpZero(Cond):
 @dataclass
 class Cmp(Cond):
     left: Expr
-    op: Literal["==", "!="]
+    op: Literal["==", "!=", "<", "<=", ">", ">="]
     right: Expr
 
 

@@ -12,4 +12,6 @@ class Op(IntEnum):
     CMP = 0x7
     CMPI = 0x8
     JNZ = 0x9
+    JLT = 0xA
+    JGE = 0xB
     HALT = 0xF

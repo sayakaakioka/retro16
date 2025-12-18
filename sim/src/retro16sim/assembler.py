@@ -49,11 +49,28 @@ def asm_jnz(off_words: int) -> int:
     return _encode_j(opcode=Op.JNZ, off_words=off_words)
 
 
+def asm_jlt(off_words: int) -> int:
+    return _encode_j(Op.JLT, off_words)
+
+
+def asm_jge(off_words: int) -> int:
+    return _encode_j(Op.JGE, off_words)
+
+
 def asm_halt():
     return _encode_j(opcode=Op.HALT, off_words=0)
 
 
-def _encode_i(*, opcode: Op, rd: Reg, rs: Reg, imm: Imm) -> int:
+def _encode_i(opcode: Op, rd: int, rs: int, imm: int) -> int:
+    if rd is None:
+        raise TypeError("rd must be int")
+
+    if rs is None:
+        raise TypeError("rs must be int")
+
+    if imm is None:
+        raise TypeError("imm must be int")
+
     imm &= IMM6_MASK  # use 6 bits only (decoder takes care of sign)
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
@@ -63,7 +80,16 @@ def _encode_i(*, opcode: Op, rd: Reg, rs: Reg, imm: Imm) -> int:
     )
 
 
-def _encode_r(*, opcode: Op, rd: Reg, rs1: Reg, rs2: Reg) -> int:
+def _encode_r(opcode: Op, rd: int, rs1: int, rs2: int) -> int:
+    if rd is None:
+        raise TypeError("rd must be int")
+
+    if rs1 is None:
+        raise TypeError("rs1 must be int")
+
+    if rs2 is None:
+        raise TypeError("rs2 must be int")
+
     return (
         ((opcode & OPCODE_MASK) << OPCODE_SHIFT)
         | ((rd & REG_MASK) << REG_SHIFT_RD)
@@ -72,18 +98,16 @@ def _encode_r(*, opcode: Op, rd: Reg, rs1: Reg, rs2: Reg) -> int:
     )
 
 
-def _encode_j(*, opcode: Op, off_words: int) -> int:
+def _encode_j(opcode: Op, off_words: int) -> int:
+    if off_words is None:
+        raise TypeError("off_words must be int")
+
     off = off_words & OFF12_MASK  # signed 12 bits
     return ((opcode & OPCODE_MASK) << OPCODE_SHIFT) | off
 
 
 # for test
 def build_test_rom(rom_words: list[int]) -> bytes:
-
-    # w0 = assemble_addi(Op.ADDI, rd=1, rs=1, imm=1)  # ADDI R1, R1, #1
-    # w1 = assemble_jmp(Op.JMP, off_words=-2)  # JMP -2
-    # rom_words = [w0, w1]
-
     rom_bytes = bytearray()
     for w in rom_words:
         rom_bytes.append(w & BYTE_MASK)  # low byte
