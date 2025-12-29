@@ -1,5 +1,5 @@
 from retro16sim.parser import parse_program
-from retro16sim.lang import Assign, BinOp, Const, Var, Program
+from retro16sim.lang import Assign, Literal, BinaryOp, Var, Program
 
 
 def test_expr_precedence_mul_over_add() -> None:
@@ -13,7 +13,7 @@ def test_expr_precedence_mul_over_add() -> None:
 
     # expected: 1 + (2 * 3)
     e = stmt0.expr
-    assert isinstance(e, BinOp)
+    assert isinstance(e, BinaryOp)
     assert e.op == "+"
-    assert isinstance(e.left, Const) and e.left.value == 1
-    assert isinstance(e.right, BinOp) and e.right.op == "*"
+    assert isinstance(e.left, Literal) and e.left.value == 1
+    assert isinstance(e.right, BinaryOp) and e.right.op == "*"

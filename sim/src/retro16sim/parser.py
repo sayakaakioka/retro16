@@ -7,12 +7,10 @@ from .lang import (
     Assign,
     While,
     If,
-    Cond,
-    Const,
-    CmpZero,
-    Cmp,
+    Literal as LitExpr,
     Expr,
-    BinOp,
+    UnaryOp,
+    BinaryOp,
     Var,
 )
 
@@ -23,9 +21,16 @@ TokenKind = Literal[
     "MINUS",
     "STAR",
     "SLASH",
-    "EQ",
     "EQEQ",
+    "EQ",
     "NEQ",
+    "LT",
+    "LE",
+    "GT",
+    "GE",
+    "ANDAND",
+    "OROR",
+    "BAMG",
     "LPAREN",
     "RPAREN",
     "LBRACE",
@@ -55,9 +60,17 @@ TOKEN_SPEC = [
     ("WS", r"[ \t\n\r]+"),
     ("INT", r"-?\d+"),
     ("IDENT", r"[A-Za-z_][A-Za-z0-9_]*"),
+    # multi characters first
+    ("LE", r"<="),
+    ("GE", r">="),
     ("EQEQ", r"=="),
     ("NEQ", r"!="),
-    ("EQ", r"="),  # define EQEQ, NEQ, EQ in this order for the correct parse
+    ("LT", r"<"),
+    ("GT", r">"),
+    ("ANDAND", r"&&"),
+    ("OROR", r"\|\|"),
+    ("BANG", r"!"),
+    ("EQ", r"="),
     ("PLUS", r"\+"),
     ("MINUS", r"-"),
     ("STAR", r"\*"),
@@ -76,7 +89,6 @@ MASTER_RE = re.compile(
 
 def tokenize(src: str) -> List[Token]:
     tokens: List[Token] = []
-    pos = 0
     for m in MASTER_RE.finditer(src):
         kind = m.lastgroup
         text = m.group()
@@ -84,7 +96,7 @@ def tokenize(src: str) -> List[Token]:
 
         if kind == "WS":
             continue
-        elif kind == "IDENT" and text in KEYWORDS:
+        if kind == "IDENT" and text in KEYWORDS:
             tokens.append(Token(KEYWORDS[text], text, pos))
         else:
             tokens.append(Token(kind, text, pos))
@@ -135,7 +147,7 @@ class Parser:
     def parse_while(self) -> While:
         self.eat("WHILE")
         self.eat("LPAREN")
-        cond = self.parse_cond()
+        cond = self.parse_expr()
         self.eat("RPAREN")
         body = self.parse_block()
         return While(cond=cond, body=body)
@@ -143,7 +155,7 @@ class Parser:
     def parse_if(self) -> If:
         self.eat("IF")
         self.eat("LPAREN")
-        cond = self.parse_cond()
+        cond = self.parse_expr()
         self.eat("RPAREN")
         then_body = self.parse_block()
         else_body: List[Stmt] | None = None
@@ -162,65 +174,80 @@ class Parser:
         self.eat("RBRACE")
         return stmts
 
-    def parse_cond(self) -> Cond:
-        # cond: expr ("==" | "!=") expr
-        left = self.parse_expr()
-        tok = self.cur()
-        if tok.kind == "EQEQ":
-            self.eat("EQEQ")
-            right = self.parse_expr()
-
-            # expr == 0 ?
-            if isinstance(right, Const) and right.value == 0:
-                return CmpZero(expr=left, op="==")
-            else:
-                return Cmp(left=left, op="==", right=right)
-
-        elif tok.kind == "NEQ":
-            self.eat("NEQ")
-            right = self.parse_expr()
-
-            # expr == 0 ?
-            if isinstance(right, Const) and right.value == 0:
-                return CmpZero(expr=left, op="!=")
-            else:
-                return Cmp(left=left, op="!=", right=right)
-
-        else:
-            raise SyntaxError(f"unexpected == or != in condition at {tok.pos}")
+    # ---- expression grammar (precedence) ----
+    # expr        := equality
+    # equality    := relational ( (==|!=) relational )*
+    # relational  := additive ( (<|<=|>|>=) additive )*
+    # additive    := term ( (+|-) term )*
+    # term        := unary ( (*|/) unary )*
+    # unary       := ('+'|'-'|'!') unary | primary
+    # primary     := INT | IDENT | '(' expr ')'
 
     def parse_expr(self) -> Expr:
-        # expr := term (('+'|'-') term)*
+        return self.parse_equality()
+
+    def parse_equality(self) -> Expr:
+        expr = self.parse_relational()
+        while self.cur().kind in ("EQEQ", "NEQ"):
+            if self.cur().kind == "EQEQ":
+                self.eat("EQEQ")
+                right = self.parse_relational()
+                expr = BinaryOp(left=expr, op="==", right=right)
+            else:
+                self.eat("NEQ")
+                right = self.parse_relational()
+                expr = BinaryOp(left=expr, op="!=", right=right)
+        return expr
+
+    def parse_relational(self) -> Expr:
+        expr = self.parse_additive()
+        while self.cur().kind in ("LT", "LE", "GT", "GE"):
+            tok = self.cur()
+            if tok.kind == "LT":
+                self.eat("LT")
+                right = self.parse_additive()
+                expr = BinaryOp(left=expr, op="<", right=right)
+            elif tok.kind == "LE":
+                self.eat("LE")
+                right = self.parse_additive()
+                expr = BinaryOp(left=expr, op="<=", right=right)
+            elif tok.kind == "GT":
+                self.eat("GT")
+                right = self.parse_additive()
+                expr = BinaryOp(left=expr, op=">", right=right)
+            else:
+                self.eat("GE")
+                right = self.parse_additive()
+                expr = BinaryOp(left=expr, op=">=", right=right)
+        return expr
+
+    def parse_additive(self) -> Expr:
         expr = self.parse_term()
         while self.cur().kind in ("PLUS", "MINUS"):
-            tok = self.cur()
-            if tok.kind == "PLUS":
+            if self.cur().kind == "PLUS":
                 self.eat("PLUS")
                 right = self.parse_term()
-                expr = BinOp(op="+", left=expr, right=right)
+                expr = BinaryOp(left=expr, op="+", right=right)
             else:
                 self.eat("MINUS")
                 right = self.parse_term()
-                expr = BinOp(op="-", left=expr, right=right)
+                expr = BinaryOp(left=expr, op="-", right=right)
         return expr
 
     def parse_term(self) -> Expr:
-        # term := unary (('*'|'/') unary)*
         expr = self.parse_unary()
         while self.cur().kind in ("STAR", "SLASH"):
-            tok = self.cur()
-            if tok.kind == "STAR":
+            if self.cur().kind == "STAR":
                 self.eat("STAR")
                 right = self.parse_unary()
-                expr = BinOp(op="*", left=expr, right=right)
+                expr = BinaryOp(left=expr, op="*", right=right)
             else:
                 self.eat("SLASH")
                 right = self.parse_unary()
-                expr = BinOp(op="/", left=expr, right=right)
+                expr = BinaryOp(left=expr, op="/", right=right)
         return expr
 
     def parse_unary(self) -> Expr:
-        # unary := ('+'|'-') unary | primary
         tok = self.cur()
         if tok.kind == "PLUS":
             self.eat("PLUS")
@@ -228,14 +255,17 @@ class Parser:
         if tok.kind == "MINUS":
             self.eat("MINUS")
             # -E -> 0 - E
-            return BinOp(op="-", left=Const(0), right=self.parse_unary())
+            return UnaryOp(op="-", expr=self.parse_unary())
+        if tok.kind == "BANG":
+            self.eat("BANG")
+            return UnaryOp(op="!", expr=self.parse_unary())
         return self.parse_primary()
 
     def parse_primary(self) -> Expr:
         tok = self.cur()
         if tok.kind == "INT":
             value = int(self.eat("INT").value)
-            return Const(value=value)
+            return LitExpr(value=value)
 
         if tok.kind == "IDENT":
             name = self.eat("IDENT").value
@@ -252,6 +282,4 @@ class Parser:
 
 # entry point
 def parse_program(src: str) -> Program:
-    tokens = tokenize(src)
-    p = Parser(tokens)
-    return p.parse_program()
+    return Parser(tokenize(src)).parse_program()

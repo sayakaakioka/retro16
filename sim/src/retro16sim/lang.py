@@ -1,96 +1,93 @@
 from abc import ABC
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Literal
+from typing import List, Dict, Tuple
+from typing import Literal as TyLit, Union
 
 from .assembler import (
     asm_add,
     asm_addi,
     asm_sub,
+    asm_mul,
+    asm_div,
     asm_cmp,
     asm_cmpi,
     asm_halt,
     asm_jmp,
     asm_jz,
     asm_jnz,
-    asm_mul,
-    asm_div,
+    asm_jlt,
+    asm_jge,
 )
 
 from .const import R0, R1
 
 # AST definitions
 
+Value = Union[int, bool]
 
-@dataclass
-class Expr(ABC):
+
+@dataclass(frozen=True)
+class Expr:
     pass
 
 
-@dataclass
-class Const(Expr):
-    value: int
+@dataclass(frozen=True)
+class Literal(Expr):
+    value: Value
 
 
-@dataclass
+@dataclass(frozen=True)
 class Var(Expr):
     name: str
 
 
-@dataclass
-class BinOp(Expr):
-    op: str  # "+" or "-"
-    left: Expr
-    right: Expr
+UnaryOpKind = TyLit["-", "!"]
+BinaryOpKind = TyLit["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">=", "&&", "||"]
 
 
-@dataclass
-class Cond(Expr):
-    pass
-
-
-@dataclass
-class CmpZero(Cond):
+@dataclass(frozen=True)
+class UnaryOp(Expr):
+    op: UnaryOpKind
     expr: Expr
-    op: Literal["==", "!="]  # "==" or "!="
 
 
-@dataclass
-class Cmp(Cond):
+@dataclass(frozen=True)
+class BinaryOp(Expr):
     left: Expr
-    op: Literal["==", "!=", "<", "<=", ">", ">="]
+    op: BinaryOpKind
     right: Expr
 
 
-@dataclass
+@dataclass(frozen=True)
 class Stmt(ABC):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class Assign(Stmt):
     name: str
     expr: Expr
 
 
-@dataclass
+@dataclass(frozen=True)
 class While(Stmt):
-    cond: Cond
+    cond: Expr
     body: List[Stmt]
 
 
-@dataclass
+@dataclass(frozen=True)
 class If(Stmt):
-    cond: Cond
+    cond: Expr
     then_body: List[Stmt]
     else_body: List[Stmt] | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class Program:
     stmts: List[Stmt]
 
 
-type JumpKind = Literal["jmp", "jz", "jnz"]
+JumpKind = TyLit["jmp", "jz", "jnz", "jlt", "jge"]
 
 
 class Compiler:
@@ -127,9 +124,9 @@ class Compiler:
         return self.alloc_reg_for_var(name)
 
     def _alloc_temp_reg(self) -> int:
-        tmp_name = f"__tmp{self._temp_counter}"
+        name = f"__tmp{self._temp_counter}"
         self._temp_counter += 1
-        return self.alloc_reg_for_var(tmp_name)
+        return self.alloc_reg_for_var(name)
 
     def _eval_expr_to_reg(self, expr: Expr) -> int:
         if isinstance(expr, Var):
@@ -164,95 +161,202 @@ class Compiler:
         self.emit(0)  # placeholder
         self.patches.append(("jnz", pos, label))
 
-    def compile_expr(self, expr: Expr, target_reg: int) -> None:
-        if isinstance(expr, Const):
-            # target_reg = const
-            # notice R0 is utilized as zero register
-            self.emit(asm_addi(rd=target_reg, rs=R0, imm=expr.value))
+    def emit_jlt_label(self, label: str) -> None:
+        pos = self.current_index()
+        self.emit(0)  # placeholder
+        self.patches.append(("jlt", pos, label))
 
-        elif isinstance(expr, Var):
+    def emit_jge_label(self, label: str) -> None:
+        pos = self.current_index()
+        self.emit(0)  # placeholder
+        self.patches.append(("jge", pos, label))
+
+    def _new_label(self, prefix: str) -> str:
+        name = f"{prefix}_{self._label_counter}"
+        self._label_counter += 1
+        return name
+
+    def _emit_bool_from_branch(
+        self, *, jump_to_true: callable, target_reg: int
+    ) -> None:
+        true_label = self._new_label("bool_true")
+        end_label = self._new_label("bool_end")
+
+        jump_to_true(true_label)
+        self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
+        self.emit_jmp_label(end_label)
+
+        self.mark_label(true_label)
+        self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+
+        self.mark_label(end_label)
+
+    def compile_expr(self, expr: Expr, target_reg: int) -> None:
+        if isinstance(expr, Literal):
+            value = expr.value
+            if isinstance(value, bool):
+                imm = 1 if value else 0
+            elif isinstance(value, int):
+                imm = value
+            else:
+                raise NotImplementedError(f"unsupported literal: {type(value)}")
+            self.emit(asm_addi(rd=target_reg, rs=R0, imm=imm))
+            return
+
+        if isinstance(expr, Var):
             src_reg = self.reg_of(expr.name)
             if src_reg == target_reg:
                 # do nothing
                 return
 
-            # no MOV so far
             self.emit(asm_add(rd=target_reg, rs1=src_reg, rs2=R0))
+            return
 
-        elif isinstance(expr, BinOp):
+        if isinstance(expr, UnaryOp):
+            reg = self._eval_expr_to_reg(expr.expr)
+            op = expr.op
+            if op == "-":
+                self.emit(asm_sub(rd=target_reg, rs1=R0, rs2=reg))
+                return
+
+            if op == "!":
+                # target = (r==0) ? 1 : 0
+                self.emit(asm_cmpi(rs=reg, imm=0))
+                self._emit_bool_from_branch(
+                    jump_to_true=lambda lbl: self.emit_jz_label(lbl),
+                    target_reg=target_reg,
+                )
+                return
+
+            raise NotImplementedError(f"unknown unary op {op}")
+
+        if isinstance(expr, BinaryOp):
             r1 = self._eval_expr_to_reg(expr.left)
             r2 = self._eval_expr_to_reg(expr.right)
+            op = expr.op
+            if op in {"+", "-", "*", "/"}:
+                if op == "+":
+                    self.emit(asm_add(rd=target_reg, rs1=r1, rs2=r2))
+                    return
+                elif op == "-":
+                    self.emit(asm_sub(rd=target_reg, rs1=r1, rs2=r2))
+                    return
+                elif op == "*":
+                    self.emit(asm_mul(rd=target_reg, rs1=r1, rs2=r2))
+                    return
+                elif op == "/":
+                    self.emit(asm_div(rd=target_reg, rs1=r1, rs2=r2))
+                    return
 
-            if expr.op == "+":
-                self.emit(asm_add(rd=target_reg, rs1=r1, rs2=r2))
-            elif expr.op == "-":
-                self.emit(asm_sub(rd=target_reg, rs1=r1, rs2=r2))
-            elif expr.op == "*":
-                self.emit(asm_mul(rd=target_reg, rs1=r1, rs2=r2))
-            elif expr.op == "/":
-                self.emit(asm_div(rd=target_reg, rs1=r1, rs2=r2))
-            else:
-                raise NotImplementedError(f"unknown op {expr.op}")
+            if op in {"==", "!=", "<", "<=", ">", ">="}:
+                if op == ">":
+                    # a>b -> b<a
+                    self.emit(asm_cmp(rs1=r2, rs2=r1))
+                    self._emit_bool_from_branch(
+                        jump_to_true=lambda lbl: self.emit_jlt_label(lbl),
+                        target_reg=target_reg,
+                    )
+                    return
 
-        elif isinstance(expr, CmpZero):
-            tmp = self._eval_expr_to_reg(expr.expr)
+                self.emit(asm_cmp(rs1=r1, rs2=r2))
 
-            # compare tmp and 0
-            self.emit(asm_cmpi(rs=tmp, imm=0))
+                if op == "==":
+                    self._emit_bool_from_branch(
+                        jump_to_true=lambda lbl: self.emit_jz_label(lbl),
+                        target_reg=target_reg,
+                    )
+                    return
 
-            # generates code like this:
-            # if eq: jmp true
-            # reg = 0
-            # jmp end
-            # true: reg = 1
-            # end:
+                if op == "!=":
+                    self._emit_bool_from_branch(
+                        jump_to_true=lambda lbl: self.emit_jnz_label(lbl),
+                        target_reg=target_reg,
+                    )
+                    return
 
-            true_label = self._new_label("cond_true")
-            end_label = self._new_label("cond_end")
+                if op == "<":
+                    self._emit_bool_from_branch(
+                        jump_to_true=lambda lbl: self.emit_jlt_label(lbl),
+                        target_reg=target_reg,
+                    )
+                    return
 
-            if expr.op == "==":
-                self.emit_jz_label(true_label)
-            else:
-                self.emit_jnz_label(true_label)
+                if op == ">=":
+                    self._emit_bool_from_branch(
+                        jump_to_true=lambda lbl: self.emit_jge_label(lbl),
+                        target_reg=target_reg,
+                    )
+                    return
 
-            self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
-            self.emit_jmp_label(end_label)
+                if op == "<=":
+                    # a<=b -> (a<b) || (a==b)
+                    def _jump_to_true(lbl: str) -> None:
+                        self.emit_jlt_label(lbl)
+                        self.emit_jz_label(lbl)
 
-            self.mark_label(true_label)
-            self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+                    self._emit_bool_from_branch(
+                        jump_to_true=_jump_to_true,
+                        target_reg=target_reg,
+                    )
+                    return
 
-            self.mark_label(end_label)
+            if op in ("&&", "||"):
+                # True is "not zero"
+                left_reg = r1
+                right_reg = r2
 
-        elif isinstance(expr, Cmp):
-            left_reg = self._eval_expr_to_reg(expr.left)
-            right_reg = self._eval_expr_to_reg(expr.right)
-            self.emit(asm_cmp(rs1=left_reg, rs2=right_reg))
+                true_label = self._new_label("logic_true")
+                false_label = self._new_label("logic_false")
+                end_label = self._new_label("logic_end")
 
-            true_label = self._new_label("cond_true")
-            end_label = self._new_label("cond_end")
+                if op == "&&":
+                    # left is zero -> false
+                    self.emit(asm_cmpi(rs=left_reg, imm=0))
+                    self.emit_jz_label(false_label)
 
-            if expr.op == "==":
-                self.emit_jz_label(true_label)
-            else:
-                self.emit_jnz_label(true_label)
+                    # right is zero -> false
+                    self.emit(asm_cmpi(rs=right_reg, imm=0))
+                    self.emit_jz_label(false_label)
 
-            self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
-            self.emit_jmp_label(end_label)
+                    # everything else is true
+                    self.mark_label(true_label)
+                    self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+                    self.emit_jmp_label(end_label)
+                    self.mark_label(false_label)
+                    self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
+                    self.mark_label(end_label)
 
-            self.mark_label(true_label)
-            self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+                    return
 
-            self.mark_label(end_label)
+                if op == "||":
+                    # left is not zero -> true
+                    self.emit(asm_cmpi(rs=left_reg, imm=0))
+                    self.emit_jnz_label(true_label)
 
-        else:
-            raise NotImplementedError(f"unknown expr: {expr!r}")
+                    # right is not zero -> true
+                    self.emit(asm_cmpi(rs=right_reg, imm=0))
+                    self.emit_jnz_label(true_label)
+
+                    # everything else is false
+                    self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
+                    self.emit_jmp_label(end_label)
+                    self.mark_label(true_label)
+                    self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
+                    self.mark_label(end_label)
+
+                    return
+
+            raise NotImplementedError(f"unknown BinaryOp {op}")
+
+        raise NotImplementedError(f"unknown expr: {expr!r}")
 
     def compile_stmt(self, stmt: Stmt) -> None:
         if isinstance(stmt, Assign):
             reg = self.reg_of(stmt.name)
             self.compile_expr(stmt.expr, target_reg=reg)
+            return
 
-        elif isinstance(stmt, While):
+        if isinstance(stmt, While):
             loop_label = self._new_label("loop")
             end_label = self._new_label("while_end")
 
@@ -267,8 +371,9 @@ class Compiler:
 
             self.emit_jmp_label(loop_label)
             self.mark_label(end_label)
+            return
 
-        elif isinstance(stmt, If):
+        if isinstance(stmt, If):
             else_label = self._new_label("if_else")
             end_label = self._new_label("if_end")
 
@@ -279,7 +384,7 @@ class Compiler:
             for s in stmt.then_body:
                 self.compile_stmt(s)
 
-            if stmt.else_body:
+            if stmt.else_body is not None:
                 self.emit_jmp_label(end_label)
                 self.mark_label(else_label)
 
@@ -290,9 +395,9 @@ class Compiler:
 
             else:
                 self.mark_label(else_label)
+            return
 
-        else:
-            raise NotImplementedError(f"unknown stmt: {stmt!r}")
+        raise NotImplementedError(f"unknown stmt: {stmt!r}")
 
     def compile_program(self, prog: Program) -> list[int]:
         for s in prog.stmts:
@@ -306,17 +411,12 @@ class Compiler:
 
         return self.rom_words
 
-    def _new_label(self, prefix: str) -> str:
-        name = f"{prefix}_{self._label_counter}"
-        self._label_counter += 1
-        return name
-
     def _patch_jumps(self) -> None:
         for kind, pos, label in self.patches:
-            try:
-                target = self.labels[label]
-            except KeyError:
+            if label not in self.labels:
                 raise RuntimeError(f"label {label!r} not defined")
+
+            target = self.labels[label]
 
             # pos: index of jump instruction
             # next instruction is pos + 1 -> off = target - (pos + 1)
@@ -327,11 +427,14 @@ class Compiler:
                 self.rom_words[pos] = asm_jz(off_words=off)
             elif kind == "jnz":
                 self.rom_words[pos] = asm_jnz(off_words=off)
+            elif kind == "jlt":
+                self.rom_words[pos] = asm_jlt(off_words=off)
+            elif kind == "jge":
+                self.rom_words[pos] = asm_jge(off_words=off)
             else:
                 raise RuntimeError(f"unknown jump kind: {kind}")
 
 
 # entry point
 def compile_program_to_rom(prog: Program) -> list[int]:
-    c = Compiler()
-    return c.compile_program(prog)
+    return Compiler().compile_program(prog)
