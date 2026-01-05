@@ -1,5 +1,5 @@
 from retro16sim.parser import parse_program
-from retro16sim.lang import Assign, Literal, BinaryOp, Var, Program
+from retro16sim.lang import Assign, Literal, BinaryOp, Program
 
 
 def test_expr_precedence_mul_over_add() -> None:

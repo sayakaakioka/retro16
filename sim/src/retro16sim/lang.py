@@ -231,10 +231,10 @@ class Compiler:
             raise NotImplementedError(f"unknown unary op {op}")
 
         if isinstance(expr, BinaryOp):
-            r1 = self._eval_expr_to_reg(expr.left)
-            r2 = self._eval_expr_to_reg(expr.right)
             op = expr.op
             if op in {"+", "-", "*", "/"}:
+                r1 = self._eval_expr_to_reg(expr.left)
+                r2 = self._eval_expr_to_reg(expr.right)
                 if op == "+":
                     self.emit(asm_add(rd=target_reg, rs1=r1, rs2=r2))
                     return
@@ -247,8 +247,12 @@ class Compiler:
                 elif op == "/":
                     self.emit(asm_div(rd=target_reg, rs1=r1, rs2=r2))
                     return
+                else:
+                    raise AssertionError("unreachable")
 
             if op in {"==", "!=", "<", "<=", ">", ">="}:
+                r1 = self._eval_expr_to_reg(expr.left)
+                r2 = self._eval_expr_to_reg(expr.right)
                 if op == ">":
                     # a>b -> b<a
                     self.emit(asm_cmp(rs1=r2, rs2=r1))
@@ -300,10 +304,11 @@ class Compiler:
                     )
                     return
 
+                raise AssertionError("unreachable")
+
             if op in ("&&", "||"):
                 # True is "not zero"
-                left_reg = r1
-                right_reg = r2
+                left_reg = self._eval_expr_to_reg(expr.left)
 
                 true_label = self._new_label("logic_true")
                 false_label = self._new_label("logic_false")
@@ -314,14 +319,16 @@ class Compiler:
                     self.emit(asm_cmpi(rs=left_reg, imm=0))
                     self.emit_jz_label(false_label)
 
-                    # right is zero -> false
+                    # left is true -> evaluate right
+                    right_reg = self._eval_expr_to_reg(expr.right)
                     self.emit(asm_cmpi(rs=right_reg, imm=0))
                     self.emit_jz_label(false_label)
 
-                    # everything else is true
+                    # right is true -> true
                     self.mark_label(true_label)
                     self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
                     self.emit_jmp_label(end_label)
+
                     self.mark_label(false_label)
                     self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
                     self.mark_label(end_label)
@@ -333,18 +340,23 @@ class Compiler:
                     self.emit(asm_cmpi(rs=left_reg, imm=0))
                     self.emit_jnz_label(true_label)
 
-                    # right is not zero -> true
+                    # left is false -> evaluate right
+                    right_reg = self._eval_expr_to_reg(expr.right)
                     self.emit(asm_cmpi(rs=right_reg, imm=0))
                     self.emit_jnz_label(true_label)
 
-                    # everything else is false
+                    # right is false -> false
+                    self.mark_label(false_label)
                     self.emit(asm_addi(rd=target_reg, rs=R0, imm=0))
                     self.emit_jmp_label(end_label)
+
                     self.mark_label(true_label)
                     self.emit(asm_addi(rd=target_reg, rs=R0, imm=1))
                     self.mark_label(end_label)
 
                     return
+
+                raise AssertionError("unreachable")
 
             raise NotImplementedError(f"unknown BinaryOp {op}")
 

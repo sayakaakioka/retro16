@@ -30,7 +30,7 @@ TokenKind = Literal[
     "GE",
     "ANDAND",
     "OROR",
-    "BAMG",
+    "BANG",
     "LPAREN",
     "RPAREN",
     "LBRACE",
@@ -175,7 +175,9 @@ class Parser:
         return stmts
 
     # ---- expression grammar (precedence) ----
-    # expr        := equality
+    # expr        := or
+    # or          := and ( '||' and )*
+    # and         := equality ( '&&' equality )*
     # equality    := relational ( (==|!=) relational )*
     # relational  := additive ( (<|<=|>|>=) additive )*
     # additive    := term ( (+|-) term )*
@@ -184,7 +186,23 @@ class Parser:
     # primary     := INT | IDENT | '(' expr ')'
 
     def parse_expr(self) -> Expr:
-        return self.parse_equality()
+        return self.parse_or()
+
+    def parse_or(self) -> Expr:
+        expr = self.parse_and()
+        while self.cur().kind == "OROR":
+            self.eat("OROR")
+            right = self.parse_and()
+            expr = BinaryOp(left=expr, op="||", right=right)
+        return expr
+
+    def parse_and(self) -> Expr:
+        expr = self.parse_equality()
+        while self.cur().kind == "ANDAND":
+            self.eat("ANDAND")
+            right = self.parse_equality()
+            expr = BinaryOp(left=expr, op="&&", right=right)
+        return expr
 
     def parse_equality(self) -> Expr:
         expr = self.parse_relational()
